@@ -1,0 +1,554 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id   String @id @default(uuid())
+  name String
+  slug String @unique
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activeUsers User[] @relation("ActiveCompanyUsers")
+
+  memberships UserCompany[]
+
+  roles Role[]
+
+  customers            Customer[]
+  deals                Deal[]
+  tasks                Task[]
+  notes                Note[]
+  tags                 Tag[]
+  contacts             Contact[]
+  communicationRecords CommunicationRecord[]
+  communicationTemplates CommunicationTemplate[]
+  workflowRules WorkflowRule[]
+
+  @@index([createdAt])
+}
+
+model User {
+  id           String @id @default(uuid())
+  email        String
+  passwordHash String
+  fullName     String
+
+  memberships UserCompany[]
+
+  activeCompanyId String?
+  activeCompany   Company? @relation("ActiveCompanyUsers", fields: [activeCompanyId], references: [id])
+
+  ownedDeals    Deal[]
+  userRoles     UserRole[]
+  assignedTasks Task[]
+  notes         Note[]
+
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
+  communicationRecordsCreated CommunicationRecord[]
+  workflowRulesCreated WorkflowRule[]
+
+  @@unique([email, activeCompanyId])
+}
+
+model UserCompany {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  userId    String
+  companyId String
+
+  role     MembershipRole @default(member)
+  isActive Boolean        @default(true)
+
+  user    User    @relation(fields: [userId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  userId    String?
+  companyId String?
+
+  action   String
+  entity   String
+  entityId String?
+
+  route     String?
+  method    String?
+  ip        String?
+  userAgent String?
+
+  requestId String?
+
+  metadata Json?
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([companyId])
+  @@index([action])
+}
+
+enum MembershipRole {
+  owner
+  admin
+  member
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique // örn: "customer:create"
+  description String?
+
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model Role {
+  id        String @id @default(uuid())
+  name      String // örn: "Sales", "Manager"
+  companyId String
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([createdAt])
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model UserRole {
+  id     String @id @default(uuid())
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+  @@index([userId])
+}
+
+model Customer {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  type CustomerType @default(person)
+
+  name  String
+  email String?
+  phone String?
+
+  taxNumber String?
+
+  contacts Contact[]
+  deals    Deal[]
+  tasks    Task[]
+  tags     CustomerTag[]
+
+  deletedAt DateTime?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  communicationRecords CommunicationRecord[]
+
+  @@index([companyId])
+  @@index([companyId, createdAt])
+  @@index([companyId, deletedAt])
+}
+
+model Contact {
+  id String @id @default(uuid())
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  firstName String
+  lastName  String?
+  email     String?
+  phone     String?
+  title     String?
+  note      String?
+
+  isPrimary Boolean @default(false)
+
+  deletedAt DateTime?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  communicationRecords CommunicationRecord[]
+
+  @@unique([customerId, email])
+  @@unique([customerId, phone])
+  @@index([customerId])
+  @@index([companyId])
+  @@index([customerId, createdAt])
+  @@index([customerId, deletedAt])
+}
+
+model Deal {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  title    String
+  stage    DealStage @default(new)
+  value    Int?
+  currency String?
+
+  expectedCloseDate DateTime?
+  closedAt          DateTime?
+
+  tasks Task[]
+  tags  DealTag[]
+
+  deletedAt DateTime?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  communicationRecords CommunicationRecord[]
+
+  @@index([companyId])
+  @@index([companyId, stage])
+  @@index([companyId, createdAt])
+  @@index([customerId])
+  @@index([ownerId])
+  @@index([companyId, deletedAt])
+}
+
+model Task {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  assigneeId String?
+  assignee   User?   @relation(fields: [assigneeId], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id])
+
+  title       String
+  description String?
+  status      TaskStatus @default(todo)
+
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  tags TaskTag[]
+
+  deletedAt DateTime?
+  overdueEventSentAt   DateTime?
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  communicationRecords CommunicationRecord[]
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, dueDate])
+  @@index([assigneeId])
+  @@index([customerId])
+  @@index([dealId])
+  @@index([companyId, deletedAt])
+}
+
+model Note {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  entityType NoteEntityType
+  entityId   String
+
+  content String
+
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, entityType, entityId])
+  @@index([createdById])
+  @@index([companyId, deletedAt])
+}
+
+model Tag {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name  String
+  color String?
+
+  deletedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  customerTags CustomerTag[]
+  dealTags     DealTag[]
+  taskTags     TaskTag[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([companyId, deletedAt])
+}
+
+model CustomerTag {
+  id String @id @default(uuid())
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  tagId String
+  tag   Tag    @relation(fields: [tagId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([customerId, tagId])
+  @@index([tagId])
+  @@index([customerId])
+}
+
+model DealTag {
+  id String @id @default(uuid())
+
+  dealId String
+  deal   Deal   @relation(fields: [dealId], references: [id])
+
+  tagId String
+  tag   Tag    @relation(fields: [tagId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([dealId, tagId])
+  @@index([tagId])
+  @@index([dealId])
+}
+
+model TaskTag {
+  id String @id @default(uuid())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id])
+
+  tagId String
+  tag   Tag    @relation(fields: [tagId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, tagId])
+  @@index([tagId])
+  @@index([taskId])
+}
+
+model CommunicationRecord {
+  id String @id @default(uuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  channel CommunicationChannel
+  status  CommunicationStatus  @default(queued)
+
+  provider          String
+  providerMessageId String?
+
+  payloadSnapshot  Json
+  providerResponse Json?
+
+  errorCode    String?
+  errorMessage String?
+
+  retryCount         Int      @default(0)
+  nextRetryAt        DateTime?
+  lastAttemptAt      DateTime?
+
+  requestId   String?
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id])
+
+  dealId String?
+  deal   Deal?   @relation(fields: [dealId], references: [id])
+
+  taskId String?
+  task   Task?   @relation(fields: [taskId], references: [id])
+
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([companyId, createdAt])
+  @@index([companyId, status, channel])
+  @@index([companyId, customerId])
+}
+
+model CommunicationTemplate {
+  id          String               @id @default(uuid())
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  companyId   String
+  company     Company              @relation(fields: [companyId], references: [id])
+
+  channel     CommunicationChannel
+  key         String               
+  subject     String?
+  body        String
+
+  variablesSchema Json?
+
+  isActive    Boolean              @default(true)
+  deletedAt   DateTime?
+
+  @@unique([companyId, channel, key])
+  @@index([companyId, channel])
+}
+
+model WorkflowRule {
+  id         String           @id @default(uuid())
+  companyId  String
+  company    Company          @relation(fields: [companyId], references: [id])
+
+  name       String
+  eventKey   WorkflowEventKey
+  enabled    Boolean          @default(true)
+
+  conditions Json?        
+  action     Json         
+
+  createdById String?
+  createdBy   User?           @relation(fields: [createdById], references: [id])
+
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  deletedAt  DateTime?
+
+  @@index([companyId, eventKey, enabled])
+  @@index([companyId, createdAt])
+}
+
+
+enum CustomerType {
+  person
+  company
+}
+
+enum DealStage {
+  new
+  contacted
+  qualified
+  proposal_sent
+  negotiation
+  won
+  lost
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+  canceled
+}
+
+enum NoteEntityType {
+  customer
+  deal
+  task
+}
+
+enum CommunicationChannel {
+  email
+  sms
+  push
+}
+
+enum CommunicationStatus {
+  queued
+  sent
+  delivered
+  failed
+}
+
+enum WorkflowEventKey {
+  customer_created
+  deal_stage_changed
+  task_overdue
+}
+
